@@ -1,0 +1,116 @@
+Practical Machine Learning project
+==================================
+
+```{r, echo = F, results = "hide", message=FALSE, warning = FALSE}
+require(caret)
+require(rpart)
+```
+
+This reports on the data analysis project for the Practical Machine Learning coursera course.
+
+The first step of this process was to load the datasets.
+
+```{r}
+trainData = read.csv("pml-training.csv")
+dim(trainData)
+testData = read.csv("pml-testing.csv")
+dim(testData)
+
+```
+
+The training data encompasses 19622 instances with 160 features (the last column is the class).
+The testing data has only 20 instances with the same feature set (except for the class attribute).
+
+```{r}
+table(trainData$classe)
+```
+
+The class variable has 5 possible values that are well balanced in the dataset.
+
+As a pre-processing step, the number of features was reduced.
+Since it was verified that the dataset has a considerable number of NAs (or empty fields), it was decided to remove all features where over half of the values were not present.
+This is done in the following code, where the set of features to remove will also include the first 7 features of the dataset, which include indexes, user names, timestamps and window identifiers.
+
+```{r}
+feature_nas = apply(trainData, 2, function(x) { sum(is.na(x)) + sum(x=="", na.rm=T) } )
+to.remove = which(feature_nas > (nrow(trainData))/2)
+to.remove = c(to.remove, 1:7)
+length(to.remove)
+filteredTrainData = trainData[, -to.remove]
+dim(filteredTrainData)
+filteredTestData = testData[,-to.remove]
+```
+
+After this reduction the dataset now includes 53 features.
+
+With this reduced dataset, a number of possible classifiers will be evaluated using the train function of the caret package.
+This also creates a final model trained with the whole dataset that will be used to predict the test cases.
+
+We will start by trying decision trees, with the rpart package.
+The tune length parameter is set to try 30 different configurations of the rpart internal parameters.
+
+```{r, cache = TRUE}
+set.seed(12341)
+model.tree = train(classe ~., method = "rpart", trControl = trainControl(method = "cv"), 
+                   tuneLength = 30, data = filteredTrainData)
+model.tree$results[rownames(model.tree$bestTune),-1]
+```
+
+The estimated accuracy for the tree model with the best configuration is about 84%.
+
+The predictions of the best tree model for the test set are the following:
+
+```{r}
+pred.tree = predict(model.tree, filteredTestData)
+pred.tree
+```
+
+The following classifier to test is Partial Least Squeres (PLS).
+
+```{r, results="hide", message = FALSE, warning= FALSE, cache = TRUE}
+set.seed(12341)
+model.pls = train(classe ~ ., preProcess = c("center", "scale"), method = "pls", 
+                 trControl = trainControl(method = "cv"), tuneLength = 30, data = filteredTrainData)
+```
+
+```{r}
+model.pls$results[rownames(model.pls$bestTune),-1]
+```
+
+The estimated accuracy, in the case of the best PLS model is 68%, therefore considerably lower than the tree model.
+
+The predictions of the best PLS model for the test set are the following:
+
+```{r,  warning = FALSE, message = FALSE}
+pred.pls = predict(model.pls, filteredTestData)
+pred.pls
+```
+
+Finally, Support Vector Machines (SVM) are tried:
+
+```{r, results = "hide", cache= TRUE, warning = FALSE, message = FALSE}
+set.seed(12341)
+model.svm = train(classe ~., preProcess = c("center", "scale"), method = "svmLinear", 
+                  trControl = trainControl(method = "cv"), data = filteredTrainData)
+```
+
+```{r}
+model.svm$results[rownames(model.svm$bestTune),-1]
+```
+
+The estimated accuracy, in the case of the best SVM model is about 79%.
+
+The predictions of the best SVM model for the test set are the following:
+
+```{r, warning = FALSE, message = FALSE}
+pred.svm = predict(model.svm, filteredTestData)
+pred.svm
+```
+
+The final predictions for the test set were obtained by a majority vote over the three final models.
+
+```{r}
+final.pred = c("B", "A", "B", "A", "A", "E", "D", "A", "A", "A", "C", "A", "B", "A", "E", "E", "A", "B", "B", "B")
+pred.df = data.frame(tree = pred.tree, svm = pred.svm, pls = pred.pls, final = final.pred)
+pred.df
+```
